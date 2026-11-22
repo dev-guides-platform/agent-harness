@@ -310,7 +310,7 @@ fn execute() -> Result<ExitCode, HarnessError> {
                     let url = base_url.unwrap_or_else(|| {
                         "https://generativelanguage.googleapis.com/v1beta/openai".to_string()
                     });
-                    let chosen_model = model.unwrap_or_else(|| "gemini-2.5-pro".to_string());
+                    let chosen_model = model.unwrap_or_else(|| "gemini-3.8-flash".to_string());
                     Box::new(OpenAiCompatibleProvider::new(
                         url,
                         api_key,

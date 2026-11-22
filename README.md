@@ -90,7 +90,7 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 
-Expected: all tests pass (7 unit tests + 6 integration tests) and Clippy reports no warnings. If this fails, fix the environment before starting the lab — see [Troubleshooting](#troubleshooting).
+Expected: all tests pass (8 unit tests + 6 integration tests) and Clippy reports no warnings. If this fails, fix the environment before starting the lab — see [Troubleshooting](#troubleshooting).
 
 ## Step 3: Create the broken lab crate
 
@@ -240,11 +240,11 @@ export GEMINI_API_KEY="AIza..."
 
 cargo run --quiet -- run \
   --workspace ./lab-workspace \
-  --provider gemini --model gemini-2.5-pro \
+  --provider gemini --model gemini-3.8-flash \
   --verify "cargo test --quiet" --verbose
 ```
 
-Defaults: base URL `https://generativelanguage.googleapis.com/v1beta/openai`, model `gemini-2.5-pro`.
+Defaults: base URL `https://generativelanguage.googleapis.com/v1beta/openai`, model `gemini-3.8-flash`. Google deprecated `gemini-2.5-pro` and routes it to `gemini-3.8-flash` from December 1, 2026 ([deprecations](https://ai.google.dev/gemini-api/docs/deprecations)).
 
 ### Anthropic Claude
 
@@ -423,6 +423,7 @@ cargo run --quiet -- run [OPTIONS]
 | A command hangs forever | Commands run directly (never via a shell), output is drained concurrently, and the child is killed at `--timeout-secs` (default 30s). |
 | Huge compiler output | Each observation is bounded to `--max-observation-bytes` on UTF-8 boundaries (60% head + 40% tail), so errors at the top and summaries at the bottom survive without panicking. |
 | Anthropic `HTTP 400` after multi-tool turns | Consecutive tool results are merged into a single `user` message, as the Anthropic API requires. |
+| Gemini `HTTP 400`: "Function call is missing a thought_signature" | Gemini 3 models attach a thought signature to each tool call (`tool_calls[].extra_content`). The harness keeps it on `ToolCall.extra_content` and sends it back unchanged, as [Google requires](https://ai.google.dev/gemini-api/docs/thought-signatures). |
 
 ## Next steps
 

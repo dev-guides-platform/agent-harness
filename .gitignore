@@ -1,0 +1,54 @@
+# Rust
+target/
+# Cargo.lock should be committed for binary applications (not libraries)
+**/*.rs.bk
+*.pdb
+
+# Environment
+.env
+.envrc
+
+# Large ML model artifacts (downloaded locally / mounted in prod)
+/models/
+*.onnx
+.selfnotes
+
+# IDE
+.vscode/
+.acp-sessions/
+.idea/
+*.swp
+*.aider*
+*.swo
+dev-docs/
+*~
+.claude/settings.local.json
+.claude/*
+.mcp.json
+agent-refs/
+test-coverage/
+.qoder
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Fly
+fly.toml.backup
+taming-transformers/
+
+# Stakpak session files
+.stakpak/session*
+
+# TEMPORARY: live production-DB validation for the agent-kernel analytics fix.
+# Kept on disk (for fast re-validation if a deploy regresses) but NOT tracked or
+# deployed. Hermetic equivalents live in src/.../heuristic.rs + query/compiler.rs.
+# Safe to delete this entry + the file once the fix is confirmed stable in prod.
+tests/analytics_live_db_ignored.rs
+
+# Python bytecode caches (must never be tracked)
+__pycache__/
+*.pyc

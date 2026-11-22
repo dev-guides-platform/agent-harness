@@ -4,6 +4,9 @@ A minimal, security-hardened AI coding harness in Rust. It wraps a language mode
 
 This repo is the hands-on lab for the written guide: [Learn What an AI Harness Is by Building One in Rust](https://www.devguides.com/jordan/learn-what-an-ai-harness-is-by-building-one-in-rust). Read the guide for the full explanation. Use this README to get running.
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/47344059-40ba-4b6a-88db-8692627ba5fa" />
+
+
 **No API key is needed to start.** Experiments 1–3 run fully offline with a built-in scripted (replay) model. Connect a real model only in optional Experiment 4.
 
 ## What is an AI harness?

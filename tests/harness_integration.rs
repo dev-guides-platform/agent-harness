@@ -165,20 +165,20 @@ fn halts_cleanly_on_max_turns_and_token_budget_circuit_breakers() {
     let mut provider2 = ScriptedProvider::from_responses(vec![
         ModelResponse {
             content: "Loop 1".to_string(),
-            tool_calls: vec![ToolCall {
-                id: "c1".to_string(),
-                name: "read_file".to_string(),
-                arguments: json!({"path": "missing.txt"}),
-            }],
+            tool_calls: vec![ToolCall::new(
+                "c1",
+                "read_file",
+                json!({"path": "missing.txt"}),
+            )],
             usage: TokenUsage::default(),
         },
         ModelResponse {
             content: "Loop 2".to_string(),
-            tool_calls: vec![ToolCall {
-                id: "c2".to_string(),
-                name: "read_file".to_string(),
-                arguments: json!({"path": "missing.txt"}),
-            }],
+            tool_calls: vec![ToolCall::new(
+                "c2",
+                "read_file",
+                json!({"path": "missing.txt"}),
+            )],
             usage: TokenUsage::default(),
         },
     ]);

@@ -17,6 +17,10 @@ pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: Value,
+    /// Provider data that must go back unchanged with this call, such as
+    /// Gemini's `extra_content.google.thought_signature`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_content: Option<Value>,
 }
 
 impl ToolCall {
@@ -25,6 +29,7 @@ impl ToolCall {
             id: id.into(),
             name: name.into(),
             arguments,
+            extra_content: None,
         }
     }
 }

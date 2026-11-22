@@ -90,7 +90,7 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 
-Expected: all tests pass (7 unit tests + 5 integration tests) and Clippy reports no warnings. If this fails, fix the environment before starting the lab — see [Troubleshooting](#troubleshooting).
+Expected: all tests pass (7 unit tests + 6 integration tests) and Clippy reports no warnings. If this fails, fix the environment before starting the lab — see [Troubleshooting](#troubleshooting).
 
 ## Step 3: Create the broken lab crate
 
@@ -298,8 +298,14 @@ cargo run --quiet -- run \
 
 Two gotchas for custom projects:
 
-- The verify command runs inside the sandbox, so its first word must be allowlisted. If your check is not (for example `npm test`), extend the list: `--allow-cmd cargo,npm,node`. Raise `--timeout-secs` for slow suites.
+- The verify command goes through the same sandbox policy, so its first word must be allowlisted. If your check is not (for example `npm test`), extend the list: `--allow-cmd cargo,npm,node`. Raise `--timeout-secs` for slow suites.
 - The agent edits files directly. Review the diff afterwards (`git diff` in that folder) and never point it at your only copy.
+
+### What the sandbox doesn't contain
+
+`SandboxPolicy` controls what the harness itself reads, writes and starts. It can't see what an allowed program does next. `cargo test` compiles and runs code the model can write, including tests and `build.rs`, with your account's permissions. Cargo and Git also read config files inside the workspace that can name other programs to run ([Cargo configuration](https://doc.rust-lang.org/cargo/reference/config.html), [git-config](https://git-scm.com/docs/git-config)). So a test the model writes can read files outside the workspace or run `sh -c`, even though `read_file` on the same path is denied.
+
+Spawned commands get a cleared environment (only `PATH`, `HOME`, `TMPDIR`, `LANG` and the Cargo and rustup variables), so your API key isn't handed to that code directly. That isn't containment. On Linux, the same code can still read the harness's original environment from `/proc`. Containing it takes an operating-system sandbox around the commands, such as bubblewrap on Linux or Seatbelt on macOS. Codex and Claude Code both use those for the commands they run ([Inside the Codex sandbox](https://openai.com/index/inside-the-codex-sandbox), [Claude Code sandboxing](https://code.claude.com/docs/en/sandboxing)). Until you add one, only point a live model at a workspace and machine you'd let it run code on.
 
 ## How to read the output
 
@@ -340,7 +346,7 @@ New to Rust or harnesses? Open the files top to bottom. Each file does one job.
 | — | `Cargo.toml` | Package `agent-harness` (binary `harness`) and its dependencies |
 | — | `src/lib.rs` | Lists the 7 modules below so tests can import them |
 | 1 | `src/types.rs` | Shared messages, tool calls, token counts, stop reasons, errors |
-| 2 | `src/sandbox.rs` | Keeps every path inside the workspace; runs only allowlisted commands with a timeout |
+| 2 | `src/sandbox.rs` | Keeps the file tools inside the workspace; runs only allowlisted commands, with a timeout and a minimal environment |
 | 3 | `src/bounding.rs` | Truncates huge tool output safely (UTF-8 aware); compacts old history |
 | 4 | `src/tools.rs` | The 4 tools (`read_file`, `write_file`, `edit_file`, `run_command`); errors become retryable feedback |
 | 5 | `src/provider.rs` | Talks to OpenAI-compatible APIs (OpenAI / Gemini / Ollama), Anthropic, and the offline scripted replay |

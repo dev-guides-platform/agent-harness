@@ -62,14 +62,20 @@ impl OpenAiCompatibleProvider {
                             .tool_calls
                             .iter()
                             .map(|tc| {
-                                Ok(json!({
+                                let mut call = json!({
                                     "id": tc.id,
                                     "type": "function",
                                     "function": {
                                         "name": tc.name,
                                         "arguments": serde_json::to_string(&tc.arguments)?,
                                     }
-                                }))
+                                });
+                                // Gemini 3 returns HTTP 400 if a call's thought signature
+                                // doesn't come back unchanged.
+                                if let Some(extra) = &tc.extra_content {
+                                    call["extra_content"] = extra.clone();
+                                }
+                                Ok(call)
                             })
                             .collect::<Result<Vec<_>, serde_json::Error>>()?;
 
@@ -114,6 +120,45 @@ impl OpenAiCompatibleProvider {
             "max_completion_tokens": self.max_completion_tokens,
         }))
     }
+
+    pub fn parse_response(payload: &Value) -> Result<ModelResponse, HarnessError> {
+        let choice = payload["choices"]
+            .get(0)
+            .ok_or_else(|| HarnessError::Provider("response contained no choices".to_string()))?;
+        let message = &choice["message"];
+        let content = message["content"].as_str().unwrap_or("").to_string();
+
+        let mut tool_calls = Vec::new();
+        if let Some(arr) = message["tool_calls"].as_array() {
+            for item in arr {
+                let id = item["id"].as_str().unwrap_or("call_unknown").to_string();
+                let name = item["function"]["name"]
+                    .as_str()
+                    .unwrap_or("unknown")
+                    .to_string();
+                let raw_args = item["function"]["arguments"].as_str().unwrap_or("{}");
+                let arguments = serde_json::from_str::<Value>(raw_args)
+                    .unwrap_or_else(|_| json!({ "_malformed_json": raw_args }));
+                tool_calls.push(ToolCall {
+                    id,
+                    name,
+                    arguments,
+                    extra_content: item.get("extra_content").filter(|v| !v.is_null()).cloned(),
+                });
+            }
+        }
+
+        let usage = TokenUsage {
+            input_tokens: payload["usage"]["prompt_tokens"].as_u64().unwrap_or(0),
+            output_tokens: payload["usage"]["completion_tokens"].as_u64().unwrap_or(0),
+        };
+
+        Ok(ModelResponse {
+            content,
+            tool_calls,
+            usage,
+        })
+    }
 }
 
 impl ModelProvider for OpenAiCompatibleProvider {
@@ -149,41 +194,7 @@ impl ModelProvider for OpenAiCompatibleProvider {
             .into_json()
             .map_err(|e| HarnessError::Provider(format!("invalid JSON from {url}: {e}")))?;
 
-        let choice = payload["choices"]
-            .get(0)
-            .ok_or_else(|| HarnessError::Provider("response contained no choices".to_string()))?;
-        let message = &choice["message"];
-        let content = message["content"].as_str().unwrap_or("").to_string();
-
-        let mut tool_calls = Vec::new();
-        if let Some(arr) = message["tool_calls"].as_array() {
-            for item in arr {
-                let id = item["id"].as_str().unwrap_or("call_unknown").to_string();
-                let name = item["function"]["name"]
-                    .as_str()
-                    .unwrap_or("unknown")
-                    .to_string();
-                let raw_args = item["function"]["arguments"].as_str().unwrap_or("{}");
-                let arguments = serde_json::from_str::<Value>(raw_args)
-                    .unwrap_or_else(|_| json!({ "_malformed_json": raw_args }));
-                tool_calls.push(ToolCall {
-                    id,
-                    name,
-                    arguments,
-                });
-            }
-        }
-
-        let usage = TokenUsage {
-            input_tokens: payload["usage"]["prompt_tokens"].as_u64().unwrap_or(0),
-            output_tokens: payload["usage"]["completion_tokens"].as_u64().unwrap_or(0),
-        };
-
-        Ok(ModelResponse {
-            content,
-            tool_calls,
-            usage,
-        })
+        Self::parse_response(&payload)
     }
 }
 
@@ -343,6 +354,7 @@ impl ModelProvider for AnthropicProvider {
                             id: block["id"].as_str().unwrap_or("toolu_unknown").to_string(),
                             name: block["name"].as_str().unwrap_or("unknown").to_string(),
                             arguments: block["input"].clone(),
+                            extra_content: None,
                         });
                     }
                     _ => {}
@@ -506,16 +518,8 @@ mod tests {
             Message::assistant(
                 "Reading both.",
                 vec![
-                    ToolCall {
-                        id: "t1".to_string(),
-                        name: "read_file".to_string(),
-                        arguments: json!({"path": "a.rs"}),
-                    },
-                    ToolCall {
-                        id: "t2".to_string(),
-                        name: "read_file".to_string(),
-                        arguments: json!({"path": "b.rs"}),
-                    },
+                    ToolCall::new("t1", "read_file", json!({"path": "a.rs"})),
+                    ToolCall::new("t2", "read_file", json!({"path": "b.rs"})),
                 ],
             ),
             Message::tool_result("t1", "contents a", false),
@@ -532,5 +536,56 @@ mod tests {
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0]["type"].as_str(), Some("tool_result"));
         assert_eq!(blocks[1]["tool_use_id"].as_str(), Some("t2"));
+    }
+
+    #[test]
+    fn gemini_thought_signature_survives_the_round_trip() {
+        // The shape of a Gemini 3 tool call on the OpenAI-compatible endpoint.
+        let payload = json!({
+            "choices": [{ "message": { "role": "assistant", "content": null, "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": { "name": "read_file", "arguments": "{\"path\":\"src/lib.rs\"}" },
+                "extra_content": { "google": { "thought_signature": "sig-A" } }
+            }] } }],
+            "usage": { "prompt_tokens": 12, "completion_tokens": 4 }
+        });
+        let resp = OpenAiCompatibleProvider::parse_response(&payload).expect("parse response");
+        let history = vec![
+            Message::user("Fix the failing test."),
+            Message::assistant(resp.content, resp.tool_calls),
+            Message::tool_result("call_1", "pub fn parse_duration_ms() {}", false),
+        ];
+        let provider = OpenAiCompatibleProvider::new(
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+            "test-key",
+            "gemini-3.8-flash",
+            2048,
+        );
+        let body = provider
+            .build_request_body(&history, &[])
+            .expect("serialize request");
+
+        assert_eq!(
+            body["messages"][1]["tool_calls"][0]["extra_content"]["google"]["thought_signature"],
+            "sig-A"
+        );
+        // Providers that never sent extra_content get none back.
+        let plain = provider
+            .build_request_body(
+                &[Message::assistant(
+                    "",
+                    vec![ToolCall::new(
+                        "call_2",
+                        "read_file",
+                        json!({ "path": "a.rs" }),
+                    )],
+                )],
+                &[],
+            )
+            .expect("serialize request");
+        assert!(plain["messages"][0]["tool_calls"][0]
+            .get("extra_content")
+            .is_none());
     }
 }

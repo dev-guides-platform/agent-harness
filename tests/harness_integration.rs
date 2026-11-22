@@ -139,6 +139,22 @@ fn enforces_command_timeout_and_kills_hanging_process() {
 }
 
 #[test]
+fn spawned_commands_get_a_minimal_environment() {
+    // Cargo sets CARGO_MANIFEST_DIR for this test process, so it stands in for
+    // any secret in the harness's environment, such as an API key.
+    assert!(std::env::var_os("CARGO_MANIFEST_DIR").is_some());
+    let dir = TempDir::new().expect("tempdir");
+    let policy = SandboxPolicy::new(dir.path(), ["env"], Duration::from_secs(5)).expect("policy");
+
+    let out = policy.run_command("env", &[]).expect("run env");
+    assert!(out.stdout.lines().any(|line| line.starts_with("PATH=")));
+    assert!(!out
+        .stdout
+        .lines()
+        .any(|line| line.starts_with("CARGO_MANIFEST_DIR=")));
+}
+
+#[test]
 fn halts_cleanly_on_max_turns_and_token_budget_circuit_breakers() {
     let dir = TempDir::new().expect("tempdir");
 

@@ -7,6 +7,18 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+/// The only variables a spawned command inherits. Everything else in the
+/// harness's environment, including the API key it read at startup, is dropped.
+const INHERITED_ENV: &[&str] = &[
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LANG",
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "RUSTUP_TOOLCHAIN",
+];
+
 #[derive(Debug, Clone)]
 pub struct CommandOutput {
     pub exit_code: Option<i32>,
@@ -144,8 +156,8 @@ impl SandboxPolicy {
     }
 
     /// Executes an allowlisted binary directly (never via `sh -c`) inside
-    /// `workspace_root`, draining pipes concurrently and killing the child if
-    /// it exceeds `command_timeout`.
+    /// `workspace_root` with a minimal environment, draining pipes concurrently
+    /// and killing the child if it exceeds `command_timeout`.
     pub fn run_command(
         &self,
         program: &str,
@@ -171,6 +183,11 @@ impl SandboxPolicy {
         let mut child = Command::new(binary)
             .args(args)
             .current_dir(&self.workspace_root)
+            .env_clear()
+            .envs(
+                std::env::vars_os()
+                    .filter(|(key, _)| INHERITED_ENV.iter().any(|name| key == *name)),
+            )
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
